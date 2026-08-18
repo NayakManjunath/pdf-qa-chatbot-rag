@@ -1,7 +1,3 @@
-import logging 
-import src.logging_config
-
-from langchain_core.documents import Document
 import logging
 from dataclasses import dataclass
 
@@ -13,14 +9,23 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SourceReference:
+    """
+    Represents the source location used to generate
+    a RAG answer.
+    """
+
     filename: str
     page: str
 
 
 @dataclass
 class RAGResponse:
+    """
+    Final structured response returned by the RAG system.
+    """
+
     answer: str
     sources: list[SourceReference]
 
@@ -29,11 +34,14 @@ def extract_sources(
     documents: list[Document],
 ) -> list[SourceReference]:
     """
-    Extract source information directly from
-    retrieved document metadata.
+    Extract unique source references from retrieved documents.
+
+    Each source contains:
+    - filename
+    - page number / page label
     """
 
-    sources = []
+    sources: list[SourceReference] = []
 
     for document in documents:
 
@@ -51,7 +59,7 @@ def extract_sources(
         )
 
         source = SourceReference(
-            filename=filename,
+            filename=str(filename),
             page=str(page),
         )
 
@@ -65,62 +73,60 @@ def extract_sources(
 
     return sources
 
-logger = logging.getLogger(__name__)
+if __name__ == "__main__":
 
-@dataclass 
-class SourceReference :
+    print()
+    print("=" * 70)
+    print("STAGE 20.3 - RESPONSE / SOURCE EXTRACTION TEST")
+    print("=" * 70)
 
-    filename : str
-    page : str 
+    test_documents = [
+        Document(
+            page_content="Employee handbook content",
+            metadata={
+                "filename": "employee_handbook.pdf",
+                "page_label": "1",
+            },
+        ),
+        Document(
+            page_content="Another chunk from same page",
+            metadata={
+                "filename": "employee_handbook.pdf",
+                "page_label": "1",
+            },
+        ),
+        Document(
+            page_content="Different page content",
+            metadata={
+                "filename": "employee_handbook.pdf",
+                "page_label": "2",
+            },
+        ),
+    ]
 
-@dataclass
-class RAGResponse :
+    sources = extract_sources(
+        test_documents
+    )
 
-    answer  : str
-    sources : list[SourceReference]
+    print()
+    print("Extracted Sources:")
+    print("-" * 70)
 
-    def extract_sources(
-
-            documents : list[Document]
-
-        ) -> list[SourceReference]:
-
-        """
-             Extract sources information directly from retrieved document metadata
-
-        """
-        sources =[]
-
-        for document in documents:
-
-            filename = document.metadata.get(
-
-                "filename",
-                "unkonwn",
-            )
-
-        page= document.metadata.get(
-
-            "page_label",
-            document.metadata.get(
-                "page",
-                "unknown",
-            ),
+    for index, source in enumerate(
+        sources,
+        start=1,
+    ):
+        print(
+            f"{index}. "
+            f"{source.filename}, "
+            f"Page {source.page}"
         )
 
-        source = SourceReference(
+    print()
+    print(
+        f"Unique Sources: {len(sources)}"
+    )
 
-            filename = filename,
-            page = str([page]),
-        )
-
-        if source not in sources :
-
-            sources.append(source)
-
-        logger.info (
-            "Extracted %d unique source(s)",
-             len(sources),
-        )
-
-        return sources 
+    print("=" * 70)
+    print("STAGE 20.3 TEST COMPLETED")
+    print("=" * 70)

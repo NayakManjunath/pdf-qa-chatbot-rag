@@ -1,23 +1,78 @@
-import logging 
+import logging
+from dataclasses import dataclass
+
 import src.logging_config
 
 from src.core.llm import get_llm
 
+
 logger = logging.getLogger(__name__)
+
+
+MAX_REWRITTEN_QUERY_LENGTH = 300
+
+
+@dataclass
+class QueryRewriteResult:
+    original_query: str
+    rewritten_query: str
+    was_rewritten: bool
+
+
+def _clean_rewritten_query(query: str) -> str:
+    """
+    Clean the raw LLM output before using it for retrieval.
+    """
+
+    query = query.strip()
+
+    # Remove surrounding quotes if the LLM added them.
+    query = query.strip('"').strip("'").strip()
+
+    return query
+
 
 def rewrite_query(
     query: str,
     conversation_history: str = "",
-) -> str:
+) -> QueryRewriteResult:
+    """
+    Convert a conversational question into a standalone
+    retrieval query.
+
+    If there is no conversation history, the original query
+    is returned unchanged.
+    """
+
+    original_query = query.strip()
 
     logger.info("=" * 70)
-    logger.info("QUERY REWRITING")
+    logger.info("QUERY UNDERSTANDING / REWRITING")
     logger.info("=" * 70)
 
     logger.info(
         "Original Query: %s",
-        query,
+        original_query,
     )
+
+    # ---------------------------------------------------------
+    # Validation
+    # ---------------------------------------------------------
+
+    if not original_query:
+        logger.warning(
+            "Empty query received."
+        )
+
+        return QueryRewriteResult(
+            original_query="",
+            rewritten_query="",
+            was_rewritten=False,
+        )
+
+    # ---------------------------------------------------------
+    # No conversation history
+    # ---------------------------------------------------------
 
     if not conversation_history.strip():
 
@@ -25,220 +80,155 @@ def rewrite_query(
             "No conversation history. Query unchanged."
         )
 
-        return query.strip()
+        return QueryRewriteResult(
+            original_query=original_query,
+            rewritten_query=original_query,
+            was_rewritten=False,
+        )
 
-#     prompt = f"""
-# You are a query rewriting component for a
-# document question-answering system.
-
-# Your ONLY task is to create a standalone search
-# query for document retrieval.
-
-# Current User Question:
-# {query}
-
-# Conversation History:
-# {conversation_history}
-
-# Rules:
-
-# 1. If the current question is already standalone,
-#    return it unchanged.
-
-# 2. If the current question depends on previous
-#    conversation, resolve the references using the
-#    conversation history.
-
-# 3. Preserve important subject context from the
-#    conversation when it is necessary for retrieval.
-
-# 4. Do not answer the question.
-
-# 5. Do not introduce facts that are not present
-#    in the conversation.
-
-# 6. Do not invent entities, policies, numbers,
-#    dates, names, or other information.
-
-# 7. Do not include explanations.
-
-# 8. Return ONLY the standalone search query.
-
-# Examples:
-
-# Conversation:
-# USER: How many sick leave days are employees entitled to?
-# ASSISTANT: Employees are entitled to 10 paid sick leave days annually.
-
-# Current Question:
-# What about the medical certificate?
-
-# Good rewritten query:
-# medical certificate requirement for sick leave
-
-# ---
-
-# Conversation:
-# USER: What are the working hours?
-# ASSISTANT: Standard working hours are Monday to Friday, 9:00 AM to 6:00 PM.
-
-# Current Question:
-# What about the medical certificate?
-
-# Good rewritten query:
-# medical certificate requirement
-
-# ---
-
-# If no rewriting is necessary, return the
-# current question as-is.
-
-# Standalone Search Query:
-# """
+    # ---------------------------------------------------------
+    # Query rewriting prompt
+    # ---------------------------------------------------------
 
     prompt = f"""
-    You are a query rewriting component for a document
-    retrieval system.
+You are a query rewriting component for a document
+retrieval system.
 
-    Your task is ONLY to rewrite the CURRENT USER QUESTION
-    into a standalone search query.
+Your ONLY task is to convert the CURRENT USER QUESTION
+into a short, standalone search query.
 
-    You are NOT answering the question.
+You are NOT answering the question.
 
-    ==================================================
-    CONVERSATION HISTORY
-    ==================================================
+==================================================
+CONVERSATION HISTORY
+==================================================
 
-    {conversation_history}
+{conversation_history}
 
-    ==================================================
-    CURRENT USER QUESTION
-    ==================================================
+==================================================
+CURRENT USER QUESTION
+==================================================
 
-    {query}
+{original_query}
 
-    ==================================================
-    RULES
-    ==================================================
+==================================================
+RULES
+==================================================
 
-    1. Use the conversation history to understand references
-    in the current question.
+1. Use conversation history only when necessary to
+   understand the current question.
 
-    2. Resolve words such as:
-    - it
-    - this
-    - that
-    - they
-    - them
-    - what about
-    - how about
-    - what approval
-    - when should I
+2. Resolve conversational references such as:
 
-    3. Preserve the main topic from the conversation when
-    the current question depends on it.
+   - it
+   - this
+   - that
+   - they
+   - them
+   - it
+   - what about
+   - how about
+   - what approval
+   - when should I
 
-    4. If the current question is already standalone,
-    you may simplify it, but preserve its meaning.
+3. Preserve the original meaning.
 
-    5. Do NOT answer the question.
+4. Preserve the main topic when the current question
+   depends on previous conversation.
 
-    6. Do NOT invent facts.
+5. If the current question is already standalone,
+   keep it substantially unchanged.
 
-    7. Do NOT introduce names, numbers, dates, policies,
-    entities, or details that are not present in the
-    conversation.
+6. Do NOT answer the question.
 
-    8. Do NOT mention the conversation history.
+7. Do NOT invent facts.
 
-    9. Do NOT output explanations.
+8. Do NOT introduce names, numbers, dates, policies,
+   entities, or details that are not present in the
+   conversation.
 
-    10. Do NOT output labels such as:
-        "Current User Question:"
-        "Conversation History:"
-        "Standalone Search Query:"
+9. Do NOT mention the conversation history.
 
-    11. Return ONLY the final search query.
+10. Do NOT provide explanations.
 
-    12. The final output must be a short standalone
-        search query suitable for vector search and BM25.
+11. Do NOT output labels.
 
-    ==================================================
-    EXAMPLES
-    ==================================================
+12. Return ONLY the final standalone search query.
 
-    Example 1:
+13. Keep the output short and suitable for:
 
-    Conversation:
-    User: How many sick leave days are employees entitled to?
-    Assistant: Employees are entitled to 10 paid sick leave days annually.
+    - vector search
+    - BM25 retrieval
+    - semantic retrieval
 
-    Current question:
-    What about the medical certificate?
+==================================================
+EXAMPLES
+==================================================
 
-    Output:
-    medical certificate requirement for sick leave
+Conversation:
+USER: How many sick leave days are employees entitled to?
+ASSISTANT: Employees are entitled to 10 paid sick leave days annually.
 
+Current question:
+What about the medical certificate?
 
-    Example 2:
-
-    Conversation:
-    User: How many annual leave days do employees receive?
-    Assistant: Employees receive 24 annual leave days per calendar year.
-
-    Current question:
-    How do I request it?
-
-    Output:
-    how to request annual leave
+Output:
+medical certificate requirement for sick leave
 
 
-    Example 3:
+Conversation:
+USER: How many annual leave days do employees receive?
+ASSISTANT: Employees receive 24 annual leave days per calendar year.
 
-    Conversation:
-    User: Can employees work remotely?
-    Assistant: Employees may work remotely up to two days per week with manager approval.
+Current question:
+How do I request it?
 
-    Current question:
-    What approval is needed?
-
-    Output:
-    manager approval for remote work
+Output:
+how to request annual leave
 
 
-    Example 4:
+Conversation:
+USER: Can employees work remotely?
+ASSISTANT: Employees may work remotely with manager approval.
 
-    Conversation:
-    User: What does the attendance policy say?
-    Assistant: Unplanned absences should be reported to the reporting manager before the start of the workday.
+Current question:
+What approval is needed?
 
-    Current question:
-    When should I report it?
-
-    Output:
-    when to report unplanned absence
+Output:
+manager approval for remote work
 
 
-    Example 5:
+Conversation:
+USER: What does the attendance policy say?
+ASSISTANT: Unplanned absences should be reported to the reporting manager before the start of the workday.
 
-    Conversation:
-    User: How many sick leave days are employees entitled to?
-    Assistant: Employees are entitled to 10 paid sick leave days annually.
+Current question:
+When should I report it?
 
-    Current question:
-    What are the company's working hours?
-
-    Output:
-    company working hours
-
-    ==================================================
-    FINAL OUTPUT
-    ==================================================
-
-    Return ONLY the standalone search query.
-    """
+Output:
+when to report unplanned absence
 
 
+Conversation:
+USER: How many sick leave days are employees entitled to?
+ASSISTANT: Employees are entitled to 10 paid sick leave days annually.
+
+Current question:
+What are the company's working hours?
+
+Output:
+company working hours
+
+==================================================
+FINAL OUTPUT
+==================================================
+
+Return ONLY the standalone search query.
+"""
+
+    # ---------------------------------------------------------
+    # LLM
+    # ---------------------------------------------------------
 
     llm = get_llm()
 
@@ -248,101 +238,88 @@ def rewrite_query(
 
     response = llm.invoke(prompt)
 
-    rewritten_query = response.content.strip()
-    rewritten_query = rewritten_query.strip().strip('"').strip("'")
+    rewritten_query = _clean_rewritten_query(
+        response.content
+    )
+
+    # ---------------------------------------------------------
+    # Validate LLM output
+    # ---------------------------------------------------------
+
+    if not rewritten_query:
+
+        logger.warning(
+            "LLM returned an empty rewritten query. "
+            "Falling back to original query."
+        )
+
+        rewritten_query = original_query
+
+    if len(rewritten_query) > MAX_REWRITTEN_QUERY_LENGTH:
+
+        logger.warning(
+            "Rewritten query exceeds maximum length. "
+            "Falling back to original query."
+        )
+
+        rewritten_query = original_query
+
+    # ---------------------------------------------------------
+    # Determine whether rewriting occurred
+    # ---------------------------------------------------------
+
+    was_rewritten = (
+        rewritten_query.lower()
+        != original_query.lower()
+    )
 
     logger.info(
-        "Rewritten Query : %s",
+        "Rewritten Query: %s",
         rewritten_query,
+    )
+
+    logger.info(
+        "Was Rewritten: %s",
+        was_rewritten,
     )
 
     logger.info("=" * 70)
 
-    return rewritten_query
+    return QueryRewriteResult(
+        original_query=original_query,
+        rewritten_query=rewritten_query,
+        was_rewritten=was_rewritten,
+    )
 
 if __name__ == "__main__":
 
-    # history = """
-
-    # User: How many sick leave days are employees entitled to?
-
-    # Assistant: Employees are entitled to 10 paid sick leave days annually.
-
-    # """
-
-    # query = "What about the medical certificate?"
-
-    # history = """
-
-    # User: How many sick leave days are employees entitled to?
-
-    # Assistant: Employees are entitled to 10 paid sick leave days annually.
-
-    # """
-
-    # query = "What are the company's working hours?"
-
-    # history = """
-
-    # User: How many annual leave days do employees receive?
-
-    # Assistant: Employees receive 24 annual leave days per calendar year.
-
-    # """
-
-    # query = "How do I request it?"
-
-    # history = """
-
-    # User: Can employees work remotely?
-
-    # Assistant: Employees may work remotely up to two days per week with manager approval.
-
-    # """
-
-    # query = "What approval is needed?"
-
-    # history = """
-
-    # User: What does the attendance policy say?
-
-    # Assistant: Employees are expected to maintain regular attendance. Unplanned absences should be reported to the reporting manager before the start of the workday.
-
-    # """
-
-    # query = "When should I report it?"
     history = """
+USER: How many sick leave days are employees entitled to?
+ASSISTANT: Employees are entitled to 10 paid sick leave days annually.
+"""
 
-        User: What does the attendance policy say?
+    query = "What about the medical certificate?"
 
-        Assistant: Employees are expected to maintain regular attendance. Unplanned absences should be reported to the reporting manager before the start of the workday.
-
-        """
-
-    query = "When should I report it?"
-
-
-    rewritten = rewrite_query(
+    result = rewrite_query(
         query=query,
         conversation_history=history,
     )
 
     print()
     print("=" * 70)
-    print("QUERY REWRITE TEST")
+    print("STAGE 20 - QUERY REWRITING TEST")
     print("=" * 70)
 
+    print()
     print("Original Query:")
-    print(query)
+    print(result.original_query)
 
     print()
-
-    print("Conversation History:")
-    print(history)
-
-    print()
-
     print("Rewritten Query:")
-    print(rewritten)
+    print(result.rewritten_query)
+
+    print()
+    print("Was Rewritten:")
+    print(result.was_rewritten)
 
     print("=" * 70)

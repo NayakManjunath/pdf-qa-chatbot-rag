@@ -1,4 +1,4 @@
-import logging 
+import logging
 
 import src.logging_config
 
@@ -8,56 +8,73 @@ from src.core.hybrid_retriever import hybrid_search
 from src.core.generator import generate_answer
 from src.core.response import RAGResponse
 
+
 logger = logging.getLogger(__name__)
 
-def conversational_rag(
 
-        query: str,
-        conversation_history : ConversationHistory,
-        top_k : int = 3,
-)-> RAGResponse:
+def conversational_rag(
+    query: str,
+    conversation_history: ConversationHistory,
+    top_k: int = 3,
+) -> RAGResponse:
 
     logger.info("=" * 70)
     logger.info("CONVERSATIONAL RAG")
     logger.info("=" * 70)
+
     logger.info(
         "User Query: %s",
         query,
     )
 
-    # Step 1: Query Rewriting
-    logger.info(
-        "Conversation History Type : %s",
-        type(conversation_history),
-    )
+    # =========================================================
+    # STEP 1: QUERY UNDERSTANDING / REWRITING
+    # =========================================================
 
     history_text = conversation_history.format_for_prompt()
 
-    rewritten_query = rewrite_query(
+    logger.info(
+        "Conversation History Type: %s",
+        type(conversation_history),
+    )
 
-        query = query,
-        conversation_history= history_text,
+    rewrite_result = rewrite_query(
+        query=query,
+        conversation_history=history_text,
     )
 
     logger.info(
-        "Rewrite Query: %s",
-        rewritten_query,
+        "Original Query: %s",
+        rewrite_result.original_query,
     )
 
-    # step 2 : Hybrid Retrieval
+    logger.info(
+        "Rewritten Query: %s",
+        rewrite_result.rewritten_query,
+    )
+
+    logger.info(
+        "Was Rewritten: %s",
+        rewrite_result.was_rewritten,
+    )
+
+    # =========================================================
+    # STEP 2: HYBRID RETRIEVAL
+    # =========================================================
 
     documents = hybrid_search(
-
-        query = rewritten_query,
-        top_k= top_k
+        query=rewrite_result.rewritten_query,
+        top_k=top_k,
     )
 
     logger.info(
-        "Retrievl documents : %d",
+        "Retrieved Documents: %d",
         len(documents),
     )
 
-    # step 3: Generate answer
+    # =========================================================
+    # STEP 3: ANSWER GENERATION
+    # =========================================================
 
     result = generate_answer(
         query=query,
@@ -65,27 +82,28 @@ def conversational_rag(
         conversation_history=conversation_history,
     )
 
-    #step 4 : Update conversation History 
+    # =========================================================
+    # STEP 4: UPDATE CONVERSATION HISTORY
+    # =========================================================
 
     conversation_history.add_message(
-
         "user",
         query,
-
-        
     )
+
     conversation_history.add_message(
-
         "assistant",
-        result.answer
+        result.answer,
+    )
 
-    )
     logger.info(
-        "Conversation history updated"
+        "Conversation history updated."
     )
+
     logger.info("=" * 70)
 
     return result
+
 
 if __name__ == "__main__":
 
@@ -95,13 +113,13 @@ if __name__ == "__main__":
 
     print()
     print("=" * 70)
-    print("STAGE 19.4")
-    print("END-TO-END CONVERSATIONAL RAG TEST")
+    print("STAGE 20.2")
+    print("CONVERSATIONAL RAG TEST")
     print("=" * 70)
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TURN 1
-    # ---------------------------------------------------------
+    # =========================================================
 
     query_1 = (
         "How many sick leave days are employees entitled to?"
@@ -139,9 +157,9 @@ if __name__ == "__main__":
             f"Page {source.page}"
         )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # TURN 2
-    # ---------------------------------------------------------
+    # =========================================================
 
     query_2 = (
         "What about the medical certificate?"
@@ -179,9 +197,12 @@ if __name__ == "__main__":
             f"Page {source.page}"
         )
 
+    # =========================================================
+    # FINAL CONVERSATION HISTORY
+    # =========================================================
+
     print()
     print("=" * 70)
-
     print("FINAL CONVERSATION HISTORY")
     print("=" * 70)
 
