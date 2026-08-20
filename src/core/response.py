@@ -84,21 +84,21 @@ if __name__ == "__main__":
         Document(
             page_content="Employee handbook content",
             metadata={
-                "filename": "employee_handbook.pdf",
+                "filename": "employee_handbook_detailed.pdf",
                 "page_label": "1",
             },
         ),
         Document(
             page_content="Another chunk from same page",
             metadata={
-                "filename": "employee_handbook.pdf",
+                "filename": "employee_handbook_detailed.pdf",
                 "page_label": "1",
             },
         ),
         Document(
             page_content="Different page content",
             metadata={
-                "filename": "employee_handbook.pdf",
+                "filename": "employee_handbook_detailed.pdf",
                 "page_label": "2",
             },
         ),

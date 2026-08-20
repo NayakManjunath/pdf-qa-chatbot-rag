@@ -223,25 +223,36 @@ def hybrid_search(
         top_k=top_k,
     )
 
+    if not reranked_results:
+
+        logger.warning(
+            "No documents remained after reranking."
+        )
+
+        logger.info(
+            "Retrieval Relevant : False"
+        )
+
+        return []
 
     best_score = reranked_results[0][1]
-    # best_score = reranked_results[0][1]
-    
-    logger.info(
-            "Best Reranker Score : %.4f",
-            best_score,
-        )
-    
-    logger.info(
-            "Relevance Threshold : %.4f",
-            settings.relevance_threshold,
-        )
-    
-    logger.info(
-            "Retrieval Relevant : %s",
-            is_relevant(best_score),
-        )
 
+    relevance = is_relevant(best_score)
+
+    logger.info(
+        "Best Reranker Score : %.4f",
+        best_score,
+    )
+
+    logger.info(
+        "Relevance Threshold : %.4f",
+        settings.relevance_threshold,
+    )
+
+    logger.info(
+        "Retrieval Relevant : %s",
+        relevance,
+    )
     combined_documents = [
     document
     for document, _ in reranked_results

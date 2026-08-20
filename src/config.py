@@ -6,4 +6,4 @@ DOCUMENT_DIR = PROJECT_ROOT / "documents"
 
 VECTOR_DB_DIR = PROJECT_ROOT / "vectordb"
 
-PDF_FILE = DOCUMENT_DIR / "employee_handbook.pdf"
+PDF_FILE = DOCUMENT_DIR / "employee_handbook_detailed.pdf"
