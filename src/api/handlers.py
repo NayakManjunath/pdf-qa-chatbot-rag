@@ -16,7 +16,11 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
     logger.warning("Validation error :%s,", exc)
 
     return JSONResponse(
-        status_code=400, content={"error": "Validation Error", "message": "str(exc)"}
+        status_code=400,
+        content={
+            "error": "Validation Error",
+            "message": str(exc),
+        },
     )
 
 
@@ -26,7 +30,11 @@ async def knowledge_base_exception_handler(
     logger.exception("Knowledge base error: %s", exc)
 
     return JSONResponse(
-        status_code=503, content={"error": "Knowledge Base Error", "message": str(exc)}
+        status_code=503,
+        content={
+            "error": "Knowledge Base Error",
+            "message": str(exc),
+        },
     )
 
 
@@ -34,7 +42,11 @@ async def llm_exception_handler(request: Request, exc: LLMException):
     logger.exception("LLM error: %s", exc)
 
     return JSONResponse(
-        status_code=503, content={"error": "LLM error", "message": str(exc)}
+        status_code=503,
+        content={
+            "error": "LLM Error",
+            "message": str(exc),
+        },
     )
 
 
@@ -45,6 +57,6 @@ async def generic_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal Server Error",
-            "message": (" An unexpected error occured "),
+            "message": "An unexpected error occured",
         },
     )

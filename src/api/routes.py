@@ -87,12 +87,11 @@ def ask_questions(
     logger.info("Successfully processed question.")
 
     return AnswerResponse(
-    answer=response["answer"],
-    confidence=response["confidence"],
-    citations=response["citations"],
-    metadata=response["metadata"],
-)
-
+        answer=response["answer"],
+        confidence=response["confidence"],
+        citations=response["citations"],
+        metadata=response["metadata"],
+    )
 
 @router.get("/health", response_model=HealthResponse)
 def health(request: Request):
