@@ -61,7 +61,7 @@ class RAGService:
             return text
 
         return text[:limit] + "..."
-    
+
     def calculate_confidence(
         self,
         distance: float,
@@ -72,7 +72,7 @@ class RAGService:
         Distance:
             0.00 -> perfect match
             1.00 -> weak match
-        
+
         Confidence is estimated from the retriever's distance score.
 
         It is intended as a heuristic to indicate how well the retrieved
@@ -135,13 +135,18 @@ class RAGService:
 
         logger.info("Question : %s", question)
 
-        if question is None or not question.strip():
+        if not isinstance(question, str):
+            logger.warning(
+                "Invalid question type received: %s",
+                type(question).__name__,
+            )
+            raise ValidationException("Question must be a string.")
 
-            logger.warning("Empty or invalid question received.")
+            question = question.strip()
 
-            raise ValidationException("Question cannot be empty.")
-
-                
+            if not question:
+                logger.warning("Empty or whitespace-only question received.")
+                raise ValidationException("Question cannot be empty.")
 
         start_time = time.perf_counter()
 
@@ -152,21 +157,26 @@ class RAGService:
         logger.info("Stage 1 : Retrieving relevant documents...")
 
         try:
-
             retrieval_query = self.rewrite_query(question)
 
+        except LLMException:
+            raise
+
+        except Exception as error:
+            logger.exception("Query rewriting failed.")
+            raise LLMException(
+                "Unable to rewrite the query."
+            ) from error
+
+        try:
             documents = hybrid_search(
                 retrieval_query,
                 top_k=settings.top_k,
             )
 
-           
             source_pages = {}
 
-            
-
             for document in documents:
-
                 source = document.metadata.get("source")
                 page = document.metadata.get("page_label")
 
@@ -181,23 +191,36 @@ class RAGService:
                 source_pages[filename].add(page)
 
             logger.info("Retrieved Sources: %s", source_pages)
-
-            
             logger.info("Relevance gate passed.")
 
-            
         except Exception as error:
-
-            logger.exception("Stage 1 failed while retrieving documents.")
-
-            raise KnowledgeBaseException("Unable to retrieve documents.") from error
+            logger.exception(
+                "Stage 1 failed while retrieving documents."
+            )
+            raise KnowledgeBaseException(
+                "Unable to retrieve documents."
+            ) from error
 
         if not documents:
-            logger.warning("No relevant documents found for the question.")
+            logger.warning(
+                "No relevant documents found for the question."
+            )
+
+            logger.info(
+                "RAG request completed without a knowledge-base match."
+            )
 
             return {
-                "answer": "I couldn't find any relevant information in the uploaded documents.",
-                "sources": {},
+                "answer": (
+                    "I couldn't find any relevant information "
+                    "in the uploaded documents."
+                ),
+                "citations": [],
+                "metadata": {
+                    "retrieved_documents": 0,
+                    "llm_model": settings.llm_model,
+                    "embedding_model": settings.embedding_model,
+                },
             }
 
 
@@ -205,12 +228,12 @@ class RAGService:
 
         retrieval_time = retrieval_end - retrieval_start
 
-       
+
         # raise RuntimeError("Unexpected bug")
         context = self.format_docs(documents)
         logger.info("Context created successfully (%d characters).", len(context))
 
-                
+
         logger.info("Stage 2 : Creating prompt...")
 
         history = self.memory.get_history()
@@ -222,7 +245,7 @@ class RAGService:
 
         prompt_time = prompt_end - prompt_start
 
-        
+
 
         logger.info("Stage 2 completed successfully.")
         logger.info("=" * 70)
@@ -257,12 +280,19 @@ class RAGService:
 
         parse_start = time.perf_counter()
 
-        answer = self.output_parser.invoke(response)
+        try:
+            answer = self.output_parser.invoke(response)
+
+        except Exception as error:
+            logger.exception(
+                "Stage 4 failed while parsing the LLM response."
+            )
+            raise LLMException(
+                "Unable to process the generated response."
+            ) from error
 
         self.memory.add_user_message(question)
-
         self.memory.add_ai_message(answer)
-
         answer_length = len(answer)
         word_count = len(answer.split())
         line_count = len(answer.splitlines())
@@ -273,11 +303,11 @@ class RAGService:
 
         parse_time = parse_end - parse_start
 
-        
+
         logger.info("Answer Preview : %s", self.create_preview(answer))
 
-        
-        
+
+
         logger.info("=" * 70)
 
         logger.info("LLM response parsed successfully.")
@@ -316,9 +346,9 @@ class RAGService:
 
 
         citation_set = set()
+        citations = []
 
         for document in documents:
-
             source = document.metadata.get("source")
             page = document.metadata.get("page_label")
 
@@ -332,15 +362,15 @@ class RAGService:
                 )
             )
 
-            citations = [
-                {
-                    "file": file,
-                    "page": page,
-                }
-                for file, page in sorted(citation_set)
-            ]
+        citations = [
+            {
+                "file": file,
+                "page": page,
+            }
+            for file, page in sorted(citation_set)
+        ]
 
-    
+
         logger.info("=" * 70)
         logger.info("Conversation History")
         logger.info("=" * 70)
@@ -365,7 +395,7 @@ class RAGService:
 
     def rewrite_query(self, question: str) -> str:
 
-                
+
         history = self.memory.get_history()
 
         if not history:
@@ -378,8 +408,17 @@ class RAGService:
             }
         )
 
-        rewritten_query = self.llm.invoke(prompt)
-        rewritten_query = self.output_parser.invoke(rewritten_query)
+        try:
+            rewritten_query = self.llm.invoke(prompt)
+            rewritten_query = self.output_parser.invoke(rewritten_query)
+
+        except Exception as error:
+            logger.exception(
+                "Query rewriting failed during LLM processing."
+            )
+            raise LLMException(
+                "Unable to rewrite the query."
+            ) from error
 
         logger.info("=" * 70)
         logger.info("QUERY REWRITE")
@@ -391,7 +430,7 @@ class RAGService:
 
         return rewritten_query.strip()
 
-           
+
 if __name__ == "__main__":
 
     rag = RAGService()
