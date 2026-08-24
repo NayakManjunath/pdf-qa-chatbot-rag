@@ -3,11 +3,11 @@ import time
 from pathlib import Path
 
 from langchain_core.output_parsers import StrOutputParser
+from src.core.hybrid_retriever import hybrid_search_with_scores
 
 
 from src.api.exceptions import KnowledgeBaseException, LLMException, ValidationException
 from src.memory.conversation_memory import ConversationMemory
-from src.core.hybrid_retriever import hybrid_search
 from src.services.llm import create_llm
 from src.services.prompts import RAG_PROMPT, QUERY_REWRITE_PROMPT
 from src.settings import settings
@@ -64,28 +64,31 @@ class RAGService:
 
     def calculate_confidence(
         self,
-        distance: float,
+        score: float,
     ) -> float:
         """
-        Convert retrieval distance into a confidence score.
+        Convert the reranker score into a normalized confidence score.
 
-        Distance:
-            0.00 -> perfect match
-            1.00 -> weak match
+        Cross-encoder/reranker scores are not guaranteed to be in the
+        [0.0, 1.0] range. Normalize them using a sigmoid so the API
+        always exposes a valid confidence value between 0.0 and 1.0.
 
-        Confidence is estimated from the retriever's distance score.
-
-        It is intended as a heuristic to indicate how well the retrieved
-        documents match the user's query. It is not a calibrated probability.
+        This is a heuristic confidence score, not a calibrated probability.
         """
 
-        confidence = round(
-            1 / (1 + distance),
+        import math
+
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            return 0.0
+
+        confidence = 1.0 / (1.0 + math.exp(-score))
+
+        return round(
+            min(max(confidence, 0.0), 1.0),
             2,
         )
-
-        return confidence
-
 
     @staticmethod
     def format_docs(docs):
@@ -169,9 +172,28 @@ class RAGService:
             ) from error
 
         try:
-            documents = hybrid_search(
+            reranked_results = hybrid_search_with_scores(
                 retrieval_query,
                 top_k=settings.top_k,
+            )
+
+            documents = [
+                document
+                for document, _score in reranked_results
+            ]
+
+            best_reranker_score = (
+                reranked_results[0][1]
+                if reranked_results
+                else 0.0
+            )
+            confidence = self.calculate_confidence(
+                best_reranker_score
+            )
+
+            logger.info(
+                "Confidence Score : %.2f",
+                confidence,
             )
 
             source_pages = {}
@@ -215,9 +237,11 @@ class RAGService:
                     "I couldn't find any relevant information "
                     "in the uploaded documents."
                 ),
+                "confidence": 0.0,
                 "citations": [],
                 "metadata": {
                     "retrieved_documents": 0,
+                    "reranker_score": 0.0,
                     "llm_model": settings.llm_model,
                     "embedding_model": settings.embedding_model,
                 },
@@ -382,11 +406,11 @@ class RAGService:
 
         return {
             "answer": answer,
-            # "confidence": confidence,
+            "confidence": confidence,
             "citations": citations,
             "metadata": {
                 "retrieved_documents": len(documents),
-                # "retrieval_distance": round(best_distance, 4),
+                "retrieval_distance": round(best_reranker_score, 4),
                 "llm_model": settings.llm_model,
                 "embedding_model": settings.embedding_model,
             },

@@ -101,25 +101,6 @@ def search_documents(
 
 if __name__ == "__main__":
 
-    
-    # result = search_documents(
-    #     query="leave policy",
-    #     source=r"D:\Developments\Data_Science_Projects\pdf-qa-chatbot-clean\documents\employee_handbook.pdf",
-    # )
-
-    # print(f"\nRetrieved {len(result.documents)} document(s)")
-    # print(f"\nBest Distance : {result.best_distance}")
-
-    # for i, doc in enumerate(result.documents, start=1):
-
-    #     print(f"\nDocument {i}")
-    #     print("-" * 60)
-    #     print(doc.page_content[:250])
-    #     print("\nMetadata:")
-    #     print(doc.metadata)
-
-    # if __name__ == "__main__":
-
     result = search_documents(
         query="annual leave policy",
     )
