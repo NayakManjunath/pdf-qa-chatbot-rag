@@ -1,4 +1,5 @@
 import logging
+import time
 
 from rank_bm25 import BM25Okapi
 
@@ -16,26 +17,46 @@ _DOCUMENT_CHUNKS = None
 def load_bm25_index():
 
     """
-        Build a BM 25 index from all documents chunks
+    Load the cached BM25 index.
+
+    If the index has not been created yet, build it once
+    and keep it in memory for subsequent requests.
     """
 
     global _BM25_INDEX
     global _DOCUMENT_CHUNKS
 
+    # --------------------------------------------------
+    # Return cached index if already available
+    # --------------------------------------------------
+
+    if _BM25_INDEX is not None and _DOCUMENT_CHUNKS is not None:
+
+        logger.info(
+            "Using cached BM25 index with %d chunks.",
+            len(_DOCUMENT_CHUNKS),
+        )
+
+        return _BM25_INDEX, _DOCUMENT_CHUNKS
+
+    # --------------------------------------------------
+    # Build BM25 index for the first request
+    # --------------------------------------------------
+
+    logger.info(
+        "BM25 index not cached. Building index..."
+    )
+
     chunks = split_documents()
 
-    logger.info(" Building BM25 index from %d chunks",
-            len(chunks),
-    )
     logger.info(
-        "Creating BM25 keyword index..."
+        "Building BM25 index from %d chunks.",
+        len(chunks),
     )
 
     tokenized_chunks = [
-
         chunk.page_content.split()
         for chunk in chunks
-
     ]
 
     bm25 = BM25Okapi(tokenized_chunks)
@@ -305,18 +326,133 @@ def display_results(title: str, results):
         print("\nSource :", document.metadata["filename"])
         print("Page   :", document.metadata["page_label"])
 
+# def hybrid_search_with_scores(
+#     query: str,
+#     top_k: int = 3,
+#     source: str | None = None,
+# ):
+#     """
+#     Perform hybrid retrieval and return
+#     documents together with Cross-Encoder scores.
+
+#     This function is used when the application
+#     needs retrieval confidence information.
+#     """
+
+#     vector_result = search_documents(
+#         query,
+#         source=source,
+#         top_k=top_k,
+#     )
+
+#     vector_documents = vector_result.documents
+
+#     bm25_results = bm25_search(
+#         query=query,
+#         top_k=top_k,
+#         source=source,
+#     )
+
+#     document_scores = {}
+
+#     # --------------------------------------------------
+#     # Vector Retrieval
+#     # --------------------------------------------------
+
+#     for rank, document in enumerate(
+#         vector_documents,
+#         start=1,
+#     ):
+
+#         key = document.page_content
+
+#         document_scores[key] = {
+#             "document": document,
+#             "score": reciprocal_rank_fusion(rank),
+#         }
+
+#     # --------------------------------------------------
+#     # BM25 Retrieval
+#     # --------------------------------------------------
+
+#     for rank, (document, _) in enumerate(
+#         bm25_results,
+#         start=1,
+#     ):
+
+#         key = document.page_content
+
+#         score = reciprocal_rank_fusion(rank)
+
+#         if key in document_scores:
+
+#             document_scores[key]["score"] += score
+
+#         else:
+
+#             document_scores[key] = {
+#                 "document": document,
+#                 "score": score,
+#             }
+
+#     # --------------------------------------------------
+#     # RRF Ranking
+#     # --------------------------------------------------
+
+#     ranked_results = sorted(
+#         document_scores.values(),
+#         key=lambda item: item["score"],
+#         reverse=True,
+#     )
+
+#     combined_documents = [
+#         item["document"]
+#         for item in ranked_results
+#     ]
+
+#     # --------------------------------------------------
+#     # Cross-Encoder Reranking
+#     # --------------------------------------------------
+
+#     logger.info(
+#         "Running Cross-Encoder reranker..."
+#     )
+
+#     reranked_results = rerank_documents(
+#         query=query,
+#         documents=combined_documents,
+#     )
+
+#     logger.info(
+#         "Hybrid retrieval with scores completed."
+#     )
+
+#     return reranked_results
+
 def hybrid_search_with_scores(
     query: str,
     top_k: int = 3,
     source: str | None = None,
 ):
     """
-    Perform hybrid retrieval and return
-    documents together with Cross-Encoder scores.
+    Perform hybrid retrieval and return documents together
+    with Cross-Encoder scores.
 
-    This function is used when the application
-    needs retrieval confidence information.
+    This function also records detailed latency information
+    for each retrieval stage.
     """
+
+    pipeline_start = time.perf_counter()
+
+    logger.info("=" * 70)
+    logger.info("DETAILED HYBRID RETRIEVAL PROFILING")
+    logger.info("=" * 70)
+
+    # --------------------------------------------------
+    # 1. Vector Retrieval
+    # --------------------------------------------------
+
+    vector_start = time.perf_counter()
 
     vector_result = search_documents(
         query,
@@ -326,18 +462,43 @@ def hybrid_search_with_scores(
 
     vector_documents = vector_result.documents
 
+    vector_end = time.perf_counter()
+    vector_time = vector_end - vector_start
+
+    logger.info(
+        "Vector Retrieval : %.3f s",
+        vector_time,
+    )
+
+    # --------------------------------------------------
+    # 2. BM25 Retrieval
+    # --------------------------------------------------
+
+    bm25_start = time.perf_counter()
+
     bm25_results = bm25_search(
         query=query,
         top_k=top_k,
         source=source,
     )
 
+    bm25_end = time.perf_counter()
+    bm25_time = bm25_end - bm25_start
+
+    logger.info(
+        "BM25 Retrieval   : %.3f s",
+        bm25_time,
+    )
+
+    # --------------------------------------------------
+    # 3. RRF Fusion
+    # --------------------------------------------------
+
+    rrf_start = time.perf_counter()
+
     document_scores = {}
 
-    # --------------------------------------------------
     # Vector Retrieval
-    # --------------------------------------------------
-
     for rank, document in enumerate(
         vector_documents,
         start=1,
@@ -350,10 +511,7 @@ def hybrid_search_with_scores(
             "score": reciprocal_rank_fusion(rank),
         }
 
-    # --------------------------------------------------
     # BM25 Retrieval
-    # --------------------------------------------------
-
     for rank, (document, _) in enumerate(
         bm25_results,
         start=1,
@@ -374,40 +532,107 @@ def hybrid_search_with_scores(
                 "score": score,
             }
 
-    # --------------------------------------------------
-    # RRF Ranking
-    # --------------------------------------------------
+        # Sort according to RRF score
+        ranked_results = sorted(
+            document_scores.values(),
+            key=lambda item: item["score"],
+            reverse=True,
+        )
 
-    ranked_results = sorted(
-        document_scores.values(),
-        key=lambda item: item["score"],
-        reverse=True,
-    )
+        combined_documents = [
+            item["document"]
+            for item in ranked_results
+        ]
 
-    combined_documents = [
-        item["document"]
-        for item in ranked_results
-    ]
+        rrf_end = time.perf_counter()
+        rrf_time = rrf_end - rrf_start
 
-    # --------------------------------------------------
-    # Cross-Encoder Reranking
-    # --------------------------------------------------
+        logger.info(
+            "RRF Fusion       : %.3f s",
+            rrf_time,
+        )
 
-    logger.info(
-        "Running Cross-Encoder reranker..."
-    )
+        # --------------------------------------------------
+        # 4. Cross-Encoder Reranking
+        # --------------------------------------------------
 
-    reranked_results = rerank_documents(
-        query=query,
-        documents=combined_documents,
-    )
+        reranker_start = time.perf_counter()
 
-    logger.info(
-        "Hybrid retrieval with scores completed."
-    )
+        logger.info(
+            "Running Cross-Encoder reranker..."
+        )
 
-    return reranked_results
+        reranked_results = rerank_documents(
+            query=query,
+            documents=combined_documents,
+        )
 
+        reranker_end = time.perf_counter()
+        reranker_time = reranker_end - reranker_start
+
+        logger.info(
+            "Reranking        : %.3f s",
+            reranker_time,
+        )
+
+        # --------------------------------------------------
+        # 5. Final Result
+        # --------------------------------------------------
+
+        pipeline_end = time.perf_counter()
+        pipeline_time = pipeline_end - pipeline_start
+
+        logger.info("-" * 70)
+        logger.info(
+            "Vector Results   : %d",
+            len(vector_documents),
+        )
+
+        logger.info(
+            "BM25 Results     : %d",
+            len(bm25_results),
+        )
+
+        logger.info(
+            "RRF Candidates   : %d",
+            len(combined_documents),
+        )
+
+        logger.info(
+            "Final Results    : %d",
+            len(reranked_results),
+        )
+
+        logger.info("-" * 70)
+
+        logger.info(
+            "Vector Retrieval : %.3f s",
+            vector_time,
+        )
+
+        logger.info(
+            "BM25 Retrieval   : %.3f s",
+            bm25_time,
+        )
+
+        logger.info(
+            "RRF Fusion       : %.3f s",
+            rrf_time,
+        )
+
+        logger.info(
+            "Reranking        : %.3f s",
+            reranker_time,
+        )
+
+        logger.info(
+            "Hybrid Total     : %.3f s",
+            pipeline_time,
+        )
+
+        logger.info("=" * 70)
+
+        return reranked_results
 
 if __name__ == "__main__":
 
