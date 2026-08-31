@@ -128,9 +128,14 @@ yarl==1.24.2
 zstandard==0.25.0
 fastapi
 uvicorn
-black ruff flake8
+black 
+ruff 
+flake8
 
 
-# pip install black ruff flake8
-# pip install langchain-pdf
-# pip install rank-bm25
+rank-bm25==0.2.2
+langchain-chroma==1.1.0
+langchain-huggingface==1.2.2
+sentence-transformers==5.6.0
+langchain-ollama==1.1.0
+torch==2.13.0

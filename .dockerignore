@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+
+.env
+.env.*
+
+!.env.example
+
+.vscode/
+.idea/
+
+*.log
+
+ui/
+PDF Q&A Chatbot API - Swagger UI.pdf
+PDF Q&A Chatbot API - Swagger UI 1.pdf

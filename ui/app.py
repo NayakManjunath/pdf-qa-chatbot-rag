@@ -1,3 +1,5 @@
+import logging
+
 import html
 import requests
 import streamlit as st
@@ -9,6 +11,7 @@ except ModuleNotFoundError:
     from api_client import APIClient
     from config import API_TIMEOUT, APP_ICON, APP_TITLE
 
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # PAGE CONFIGURATION
