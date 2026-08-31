@@ -12,9 +12,9 @@ services:
       - .env
 
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL}
     ports:
       - "8000:8000"
 
     restart: unless-stopped
+    
