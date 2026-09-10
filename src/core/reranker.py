@@ -1,10 +1,17 @@
 import logging
+from pathlib import Path
 
 from sentence_transformers import CrossEncoder
 
 logger = logging.getLogger(__name__)
 
 _RERANKER = None
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+RERANKER_MODEL_PATH = (
+    PROJECT_ROOT / "models" / "reranker" / "ms-marco-MiniLM-L-6-v2"
+)
 
 def load_reranker():
 
@@ -23,8 +30,8 @@ def load_reranker():
         )
 
         _RERANKER = CrossEncoder(
-
-            "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            str(RERANKER_MODEL_PATH),
+            local_files_only=True,
         )
 
         logger.info(

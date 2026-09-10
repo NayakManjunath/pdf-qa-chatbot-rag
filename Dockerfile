@@ -26,6 +26,9 @@ COPY app.py .
 
 COPY src ./src
 
+# Bundled offline Hugging Face models.
+COPY models ./models
+
 # Runtime data required by the RAG application.
 COPY documents ./documents
 

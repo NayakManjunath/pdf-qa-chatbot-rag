@@ -1,30 +1,33 @@
-import logging 
+import logging
+from functools import lru_cache
+from pathlib import Path
 
 import src.logging_config
-
-from functools import lru_cache
-
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from src.core.splitter import split_documents
-
 from src.settings import settings
 
-logger =  logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
-@lru_cache(maxsize= 1)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+EMBEDDING_MODEL_PATH = (
+    PROJECT_ROOT / "models" / "embedding" / "all-MiniLM-L6-v2"
+)
 
+
+@lru_cache(maxsize=1)
 def get_embedding_model():
-
     logger.info(
-
-        "Loading HuggingFace embedding model..."
+        "Loading local HuggingFace embedding model: %s",
+        EMBEDDING_MODEL_PATH,
     )
 
     return HuggingFaceEmbeddings(
-
-        model_name = settings.embedding_model
+        model_name=str(EMBEDDING_MODEL_PATH),
+        model_kwargs={"local_files_only": True},
     )
+
 
 def generate_sample_embedding():
 
@@ -32,12 +35,12 @@ def generate_sample_embedding():
 
     embedding_model = get_embedding_model()
 
-    embedding =  embedding_model.embed_query(
-
+    embedding = embedding_model.embed_query(
         chunks[0].page_content
     )
 
     return embedding
+
 
 if __name__ == "__main__":
 
@@ -45,41 +48,6 @@ if __name__ == "__main__":
 
     print(f"Embedding Dimension: {len(embedding)}")
 
-    print("\n FIrat 10  values\n")
+    print("\nFirst 10 values\n")
 
     print(embedding[:10])
-
-
-# from langchain_huggingface import HuggingFaceEmbeddings
-
-# from src.core.splitter import split_documents
-# from src.settings import settings
-
-
-# def get_embedding_model():
-
-#     embedding_model = HuggingFaceEmbeddings(model_name=settings.embedding_model)
-
-#     return embedding_model
-
-
-# def generate_sample_embedding():
-
-#     chunks = split_documents()
-
-#     embedding_model = get_embedding_model()
-
-#     embedding = embedding_model.embed_query(chunks[0].page_content)
-
-#     return embedding
-
-
-# if __name__ == "__main__":
-
-#     embedding = generate_sample_embedding()
-
-#     print(f"Embedding Dimension: {len(embedding)}")
-
-#     print("\nFirst 10 Values\n")
-
-#     print(embedding[:10])
